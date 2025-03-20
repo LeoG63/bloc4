@@ -21,33 +21,59 @@ def box(app_id, box_name):
 
 def register(user: SigningAccount, value: str = ""):
     # Find box_key
-
+    box_key = user.public_key
     # Find min_balance
     # HINT:
-    # args = cl.RegisterArgs(name=value)
+    args = cl.RegisterArgs(name=value)
 
-    # param = au.CommonAppCallParams(
-    #             box_references=[box_key],
-    #             sender=user.address,
-    #             signer=user.signer
-    #         )
+    param = au.CommonAppCallParams(
+                box_references=[box_key],
+                sender=user.address,
+                signer=user.signer
+            )
 
-    # min_balance = get_min_balance_required(ac, ac.params.register(args, param))
-
+    min_balance = get_min_balance_required(ac, ac.params.register(args, param))
+    composer = algorand.new_group()
     # TODO composer.add_payment(
-
+    composer.add_payment(
+        au.PaymentParams(
+            sender=user.address,
+            receiver=ac.app_address,
+            amount=au.AlgoAmount(micro_algo=min_balance),
+            signer=user.signer
+        )
+    )
     # TODO composer.add_app_call_method_call(ac.params.register
-
-    # registered_at, name, balance = box_abi(cl, "User").decode(box_value)
-    registered_at, name, balance = (0, "", 0)
+    composer.add_app_call_method_call(
+        ac.params.register(
+            args,
+            param
+        )
+    )
+    composer.send()
+    box_value = box(app_id, box_name=box_key)
+    registered_at, name, balance = box_abi(cl, "User").decode(box_value)
+    # registered_at, name, balance = (0, "", 0)
     return registered_at, name, balance
 
 
 def fund_account(user: SigningAccount, amount: int):
-    args = cl.FundAccountArgs(...)
-    param = au.CommonAppCallParams(...)
-
+    box_key = user.public_key
     # TODO find args & param
+    pay_txn = algorand.create_transaction.payment(
+        au.PaymentParams(
+            sender=user.address,
+            receiver=ac.app_address,
+            amount=au.AlgoAmount(micro_algo=amount)
+        )
+    )
+    args = cl.FundAccountArgs(
+        payment=att.TransactionWithSigner(
+            txn=pay_txn,
+            signer=user.signer
+        )
+    )
+    param = au.CommonAppCallParams(box_references=[box_key])
     balance_returned = ac.send.fund_account(
         args, param
     ).abi_return
@@ -129,20 +155,20 @@ if __name__ == "__main__":
 
     bob_balance = fund_account(bob, 1_000_000)
 
-    assets = [
-        ("POKEBALL", "Catches Pokemon", 200),
-        ("POTION", "Restores 20 HP", 300),
-        ("BICYCLE", "Allows you to travel faster", 1_000_000)
-    ]
+    # assets = [
+    #     ("POKEBALL", "Catches Pokemon", 200),
+    #     ("POTION", "Restores 20 HP", 300),
+    #     ("BICYCLE", "Allows you to travel faster", 1_000_000)
+    # ]
 
-    for asset in assets:
-        add_or_update_asset(ac, asset)
+    # for asset in assets:
+    #     add_or_update_asset(ac, asset)
 
-    a, b = buy_asset(ac, "POKEBALL", 1, bob)
+    # a, b = buy_asset(ac, "POKEBALL", 1, bob)
 
-    print(a, b)
+    # print(a, b)
 
-    try:
-        a, b = buy_asset(ac, "BICYCLE", 1, bob)
-    except AssertionError:
-        print("Sorry, You can't afford it!")
+    # try:
+    #     a, b = buy_asset(ac, "BICYCLE", 1, bob)
+    # except AssertionError:
+    #     print("Sorry, You can't afford it!")

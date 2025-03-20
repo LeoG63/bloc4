@@ -1,111 +1,76 @@
 from typing import TypeAlias
-
+# Doc https://algorandfoundation.github.io/puya/index.html
+# Doc https://algorandfoundation.github.io/algokit-utils-py/index.html
 from algopy import (
     Account,
     ARC4Contract,
     BoxMap,
     Bytes,
+    Asset,
     Global,
     Txn,
+    itxn,
     UInt64,
     arc4,
     gtxn,
     op,
 )
 
-Hash: TypeAlias = Bytes
-Quantity: TypeAlias = UInt64
 
-
-class User(arc4.Struct):
-    registered_at: arc4.UInt64
-    name: arc4.String
-    balance: arc4.UInt64
-
-
-class GameAsset(arc4.Struct):
-    name: arc4.String
-    description: arc4.String
-    price: arc4.UInt64
-
-
-class Game(ARC4Contract):
+class Eval(ARC4Contract):
     def __init__(self) -> None:
-        self.user = BoxMap(Account, User, key_prefix="")
-        self.asset = BoxMap(Hash, GameAsset)
-        self.user_asset = BoxMap(Hash, Quantity)
+        self.q1 = BoxMap(Account, arc4.Bool, key_prefix="q1")
+        self.q2 = BoxMap(Account, arc4.Bool, key_prefix="q2")
+        self.q3 = BoxMap(Account, arc4.Bool, key_prefix="q3")
+        self.q4 = BoxMap(Account, arc4.Bool, key_prefix="q4")
+        self.q4_string = BoxMap(Account, arc4.String, key_prefix="")
+
+    @arc4.abimethod()
+    def add_students(self, account: Account) -> None:
+        assert Txn.sender == Global.creator_address
+        self.q4_string[account] = arc4.String(" ")
 
     @arc4.abimethod
-    def register(self, name: arc4.String) -> User:
-        """Registers a user and returns their profile information.
-
-        Args:
-            name (arc4.String): The user's name.
-
-        Returns:
-            User: The user's profile information.
-        """
-        if Txn.sender not in self.user:
-            self.user[Txn.sender] = User(
-                registered_at=arc4.UInt64(Global.latest_timestamp),
-                name=name,
-                balance=arc4.UInt64(0),
-            )
-        return self.user[Txn.sender]
+    def claim_algo(self) -> None:
+        assert Txn.sender in self.q4_string
+        assert Txn.sender not in self.q1
+        self.q1[Txn.sender] = arc4.Bool(True)
+        itxn.Payment(
+            receiver=Txn.sender,
+            amount=500_000,
+            fee=2*op.Global.min_txn_fee
+        ).submit()
 
     @arc4.abimethod
-    def fund_account(self, payment: gtxn.PaymentTransaction) -> arc4.UInt64:
-        """Funds a user's account.
-
-        Args:
-            payment (gtxn.PaymentTransaction): The payment transaction.
-
-        Returns:
-            arc4.UInt64: The user's updated balance.
-        """
-        assert (
-            payment.receiver == Global.current_application_address
-        ), "Payment receiver must be the application address"
-        assert payment.sender in self.user, "User must be registered"
-
-        self.user[payment.sender].balance = arc4.UInt64(
-            self.user[payment.sender].balance.native + payment.amount
-        )
-        return self.user[payment.sender].balance
+    def opt_in_to_asset(self, mbr_pay: gtxn.PaymentTransaction, asset: Asset) -> None:
+        assert Txn.sender in self.q4_string
+        assert Txn.sender not in self.q2
+        self.q2[Txn.sender] = arc4.Bool(True)
+        assert not Global.current_application_address.is_opted_in(asset)
+        assert mbr_pay.receiver == Global.current_application_address
+        assert mbr_pay.amount == Global.min_balance + Global.asset_opt_in_min_balance
+        itxn.AssetTransfer(
+            xfer_asset=asset.id,
+            asset_receiver=Global.current_application_address,
+            asset_amount=0,
+        ).submit()
 
     @arc4.abimethod
-    def buy_asset(self, asset_id: Hash, quantity: Quantity) -> None:
-        """Buys a game asset.
+    def sum(self, array: Bytes) -> UInt64:
+        assert Txn.sender in self.q4_string
+        assert Txn.sender not in self.q3
+        self.q3[Txn.sender] = arc4.Bool(True)
+        assert array.length == 2
 
-        Args:
-            asset_id (Hash): The hash of the asset name.
-            quantity (Quantity): The quantity to purchase.
-        """
-        assert Txn.sender in self.user, "User must be registered"
-        assert asset_id in self.asset, "Invalid asset ID"
+        total = UInt64(0)
+        for n in array:
+            total += op.btoi(n)
+        return total
 
-        user_balance = self.user[Txn.sender].balance.native
-        asset_price = self.asset[asset_id].price.native
-        assert user_balance >= (total := asset_price * quantity), "Insufficient funds"
-
-        # Update user balance
-        self.user[Txn.sender].balance = arc4.UInt64(user_balance - total)
-
-        # Insert or update user-asset box
-        user_asset_id = op.sha256(Txn.sender.bytes + asset_id)
-        if user_asset_id in self.user_asset:
-            self.user_asset[user_asset_id] += quantity
-        else:
-            self.user_asset[user_asset_id] = quantity
-
-    @arc4.abimethod
-    def admin_upsert_asset(self, asset: GameAsset) -> None:
-        """Updates or inserts a game asset.
-
-        Args:
-            asset (GameAsset): The game asset information.
-        """
-        assert (
-            Txn.sender == Global.creator_address
-        ), "Only the creator can call this method"
-        self.asset[op.sha256(asset.name.bytes)] = asset.copy()
+    @arc4.abimethod()
+    def update_box(self, value: arc4.String) -> arc4.String:
+        assert Txn.sender in self.q4_string
+        assert Txn.sender not in self.q4
+        self.q4[Txn.sender] = arc4.Bool(True)
+        self.q4_string[Txn.sender] = value
+        return self.q4_string[Txn.sender]
